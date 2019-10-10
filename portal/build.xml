@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+    <project name="ant-jmeter-test" default="all" basedir=".">
+      <tstamp>
+        <format property="time" pattern="yyyyMMddHHmm"/>
+      </tstamp>
+      <!-- 需要改成自己本地的jmeter目录-->
+      <property name="jmeter.home" value="/usr/apache-jmeter-4.0"/>
+      <!-- 需要改成 jmeter CMDRunner.jar 目录-->
+      <property name="CMDRunner.home" value="${jmeter.home}/lib/ext/CMDRunner.jar"/>
+      <property name="ReportGen.home" value="${jmeter.home}/lib/ext/ReportGen.jar"/>
+ 
+      <!--result.home需改成自己本地测试结果目录-->
+      <property name="result.home" value="/opt/portal/reportlog"/>
+
+
+
+      <!--本地工具监听器生成的jtl路径-->
+      <property name="cpuresult.home" value="/opt/portal/perfmon"/>
+
+      <!--测试脚本目录-->
+      <property name="script.home" value="/opt/portal/scripts"/>
+      <!-- jmeter 生成 jtl 格式的结果报告的路径-->
+      <property name="jmeter.result.jtl.dir" value="${result.home}/${time}/jtl/"/>
+      <!-- jmeter 生成 html 格式的结果报告的路径-->
+      <property name="jmeter.result.html.dir" value="${result.home}/${time}/html/"/>
+      <!-- jmeter 生成 png 格式的结果报告的路径-->
+      <property name="jmeter.result.png.dir" value="${result.home}/${time}/png/"/>
+ 
+      <!-- 生成的报告的前缀-->
+      <property name="ReportName" value="TestReport"/>
+ 
+      <!-- 报告名称路径配置-->
+      <property name="jmeter.result.jtlName" value="${jmeter.result.jtl.dir}${ReportName}${time}.jtl"/>
+      <property name="jmeter.result.htmlName" value="${jmeter.result.html.dir}${ReportName}${time}.html"/>
+ 
+      <!--给jmeter传入的线程/并发数-->
+      <property name="threads" value="1" />
+       <!--脚本执行时间（单位s）-->
+      <property name="duration" value="300" />
+      <!--/opt/portal/Perfmon-->
+      <property name="PerMonhome" value="/opt/portal/perfmon" />
+      <!--配置ANT需要运行的build.xml和jxm脚本路径-->
+      <property name="build.home" value="/opt/portal" />
+ 
+      <target name="all">
+        <echo message="jmeter.result.jtl.dir=${jmeter.result.jtl.dir}"/>
+        <echo message="jmeter.result.html.dir=${jmeter.result.html.dir}"/>
+        <echo message="jmeter.result.png.dir=${jmeter.result.png.dir}"/>
+        <echo message="jmeter.result.jtlName=${jmeter.result.jtlName}"/>
+        <antcall target="clean"/>
+ 
+        <!--第一步 运行脚本-->
+        <antcall target="test"/>
+ 
+        <!--第二步 生成基础报表 <antcall target="base.report" />存在性能问题，不再生成基础报表-->
+        <!--第三步 生成扩展报表-->
+        <antcall target="extras.report"/>
+        <!--第四步 清理生成的文件-->
+        <antcall target="finish"/>
+      </target>
+      <target name="clean">
+        <mkdir dir="${jmeter.result.jtl.dir}"/>
+        <mkdir dir="${jmeter.result.html.dir}"/>
+        <mkdir dir="${jmeter.result.png.dir}"/>
+        <delete includeemptydirs="true">
+          <fileset dir="${cpuresult.home}" includes="**/*.jtl"/>
+        </delete>
+      </target>
+      <target name="test">
+        <taskdef name="jmeter" classname="org.programmerplanet.ant.taskdefs.jmeter.JMeterTask"/>
+        <jmeter jmeterhome="${jmeter.home}" resultlog="${jmeter.result.jtlName}">
+          <testplans dir="${script.home}" includes="*.jmx"/>
+          <property name="jmeter.save.saveservice.output_format" value="xml"/>
+          <property name="request.threads" value="${threads}"/>
+          <property name="request.duration" value="${duration}"/>
+        </jmeter>
+      </target>
+ 
+      <target name="extras.report">
+        <!--tps 每秒事务数-->
+        <exec executable="/bin/sh">
+          <arg line="-c 'java -jar ${CMDRunner.home} --tool Reporter --generate-png ${jmeter.result.png.dir}/${ReportName}${time}_tps.png --input-jtl ${jmeter.result.jtl.dir}/${ReportName}${time}.jtl --plugin-type TransactionsPerSecond --relative-times no'"/>
+        </exec>
+        <!--RTP 响应时间的百分比-->
+        <exec executable="/bin/sh">
+          <arg line="-c 'java -jar ${CMDRunner.home} --tool Reporter --generate-png ${jmeter.result.png.dir}/${ReportName}${time}_RTP.png --input-jtl ${jmeter.result.jtl.dir}/${ReportName}${time}.jtl --plugin-type ResponseTimesPercentiles'"/>
+        </exec>
+        <!--RTD 响应时间分布情况-->
+        <exec executable="/bin/sh">
+          <arg line="-c 'java -jar ${CMDRunner.home} --tool Reporter --generate-png ${jmeter.result.png.dir}/${ReportName}${time}_RTD.png --input-jtl ${jmeter.result.jtl.dir}/${ReportName}${time}.jtl --plugin-type ResponseTimesDistribution'"/>
+        </exec>
+        <!--RLOT 响应时间随时间的变化曲线-->
+        <exec executable="/bin/sh">
+          <arg line="-c 'java -jar ${CMDRunner.home} --tool Reporter --generate-png ${jmeter.result.png.dir}/${ReportName}${time}_RLOT.png --input-jtl ${jmeter.result.jtl.dir}/${ReportName}${time}.jtl --plugin-type LatenciesOverTime  --relative-times no'"/>
+        </exec>
+        <!--生成聚合报告的 CSV 文件，后面需要二次处理-->
+        <exec executable="/bin/sh">
+          <arg line="-c 'java -jar ${CMDRunner.home} --tool Reporter --generate-csv ${jmeter.result.png.dir}/AggregateReport.csv --input-jtl ${jmeter.result.jtl.dir}/${ReportName}${time}.jtl --plugin-type AggregateReport'"/>
+        </exec>
+        <!--CSV 转换成 PNG-->
+        <exec executable="/bin/sh">
+          <arg line="-c 'java -jar ${ReportGen.home} ${jmeter.result.png.dir}/AggregateReport.csv ${jmeter.result.png.dir}/AggregateReport.png'"/>
+        </exec>
+
+      </target>
+      <target name="finish">
+        <copy todir="${jmeter.result.jtl.dir}">
+          <!--copy目标文件到result.jtl.dir下-->
+          <fileset dir="${cpuresult.home}">
+          </fileset>
+        </copy>
+      </target>
+    </project>
